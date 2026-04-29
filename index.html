@@ -1,0 +1,262 @@
+// 1. 더미 데이터 (데이터 시각화를 위한 구조화된 맛집 정보)
+const dummyData =[
+    {
+        id: 1,
+        name: "몽탄",
+        category: "한식/구이",
+        rating: 4.8,
+        reviews: 15420,
+        lat: 37.534226,
+        lng: 126.974751,
+        img: "https://images.unsplash.com/photo-1544025162-811114215663?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+        youtubeId: "V_J1bO8Z12k", // 예시 유튜브 ID
+        link: "https://place.map.kakao.com/602051652",
+        address: "서울 용산구 백범로99길 50"
+    },
+    {
+        id: 2,
+        name: "정식당",
+        category: "파인다이닝",
+        rating: 4.9,
+        reviews: 8200,
+        lat: 37.525531,
+        lng: 127.041634,
+        img: "https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+        youtubeId: "q6hS11gWvJ0", 
+        link: "https://place.map.kakao.com/12975949",
+        address: "서울 강남구 선릉로158길 11"
+    },
+    {
+        id: 3,
+        name: "금돼지식당",
+        category: "한식/구이",
+        rating: 4.7,
+        reviews: 21050,
+        lat: 37.556214,
+        lng: 127.012543,
+        img: "https://images.unsplash.com/photo-1594041680534-e8c8cdebd659?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+        youtubeId: "vBq_8rI5U8E",
+        link: "https://place.map.kakao.com/26779383",
+        address: "서울 중구 다산로 149"
+    },
+    {
+        id: 4,
+        name: "스시조",
+        category: "일식",
+        rating: 4.9,
+        reviews: 4300,
+        lat: 37.564555,
+        lng: 126.979848,
+        img: "https://images.unsplash.com/photo-1553621042-f6e147245754?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+        youtubeId: "j6fH1qZc3bI",
+        link: "https://place.map.kakao.com/8394464",
+        address: "서울 중구 소공로 106 웨스틴 조선 서울 20층"
+    },
+    {
+        id: 5,
+        name: "우래옥",
+        category: "냉면",
+        rating: 4.6,
+        reviews: 18900,
+        lat: 37.568341,
+        lng: 126.998651,
+        img: "https://images.unsplash.com/photo-1585032226651-759b368d7246?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+        youtubeId: "3Z1H6s3V9F4",
+        link: "https://place.map.kakao.com/8157321",
+        address: "서울 중구 창경궁로 62-29"
+    }
+];
+
+// 전역 상태 관리
+let map;
+let markers = [];
+let overlays = [];
+let currentData = [...dummyData];
+
+// 2. 초기화 함수
+document.addEventListener("DOMContentLoaded", () => {
+    initMap();
+    applyFilters(); // 초기 리스트 및 마커 렌더링
+    
+    // 이벤트 리스너 등록
+    document.getElementById('category-filter').addEventListener('change', applyFilters);
+    document.getElementById('sort-filter').addEventListener('change', applyFilters);
+});
+
+// 3. 카카오 지도 초기화
+function initMap() {
+    const mapContainer = document.getElementById('map');
+    const mapOptions = {
+        center: new kakao.maps.LatLng(37.545, 127.0), // 서울 중심
+        level: 7
+    };
+    map = new kakao.maps.Map(mapContainer, mapOptions);
+}
+
+// 4. 필터 및 정렬 적용
+function applyFilters() {
+    const category = document.getElementById('category-filter').value;
+    const sort = document.getElementById('sort-filter').value;
+
+    // 카테고리 필터링
+    if (category === 'all') {
+        currentData = [...dummyData];
+    } else {
+        currentData = dummyData.filter(item => item.category === category);
+    }
+
+    // 정렬 (별점순 / 리뷰순)
+    currentData.sort((a, b) => {
+        if (sort === 'rating') return b.rating - a.rating;
+        if (sort === 'reviews') return b.reviews - a.reviews;
+    });
+
+    renderSidebarList(currentData);
+    renderMapMarkers(currentData);
+}
+
+// 5. 사이드바 리스트 렌더링
+function renderSidebarList(data) {
+    const listContainer = document.getElementById('restaurant-list');
+    listContainer.innerHTML = '';
+
+    if (data.length === 0) {
+        listContainer.innerHTML = `<div class="p-6 text-center text-gray-500">조건에 맞는 맛집이 없습니다.</div>`;
+        return;
+    }
+
+    data.forEach(item => {
+        const li = document.createElement('li');
+        li.className = "bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden border border-gray-100 cursor-pointer group";
+        
+        li.innerHTML = `
+            <!-- 고해상도 이미지 분위기 강조 -->
+            <div class="h-40 w-full overflow-hidden relative" onclick="focusOnMap(${item.lat}, ${item.lng})">
+                <img src="${item.img}" alt="${item.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                <div class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">${item.category}</div>
+            </div>
+            <div class="p-4">
+                <h3 class="text-lg font-bold text-gray-900" onclick="focusOnMap(${item.lat}, ${item.lng})">${item.name}</h3>
+                <p class="text-sm text-gray-500 truncate mt-1">${item.address}</p>
+                <div class="flex items-center gap-3 mt-3 text-sm">
+                    <span class="flex items-center font-semibold text-yellow-500">
+                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                        ${item.rating}
+                    </span>
+                    <span class="text-gray-400 text-xs border-l border-gray-200 pl-3">리뷰 ${item.reviews.toLocaleString()}개</span>
+                </div>
+                <div class="flex gap-2 mt-4">
+                    <!-- 외부 리뷰(상세) 링크 (카카오맵/네이버맵/캐치테이블) -->
+                    <a href="${item.link}" target="_blank" class="flex-1 bg-gray-100 hover:bg-gray-200 text-center text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">상세 정보</a>
+                    <!-- 유튜브 모달 띄우기 -->
+                    <button onclick="openYoutubeModal('${item.youtubeId}')" class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 text-center py-2 rounded-lg text-sm font-medium transition-colors flex justify-center items-center gap-1">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+                        영상 리뷰
+                    </button>
+                </div>
+            </div>
+        `;
+        listContainer.appendChild(li);
+    });
+}
+
+// 6. 지도 마커 및 커스텀 인포윈도우 렌더링
+function renderMapMarkers(data) {
+    // 기존 마커 및 오버레이 제거
+    markers.forEach(marker => marker.setMap(null));
+    overlays.forEach(overlay => overlay.setMap(null));
+    markers = [];
+    overlays =[];
+
+    const bounds = new kakao.maps.LatLngBounds();
+
+    data.forEach(item => {
+        const position = new kakao.maps.LatLng(item.lat, item.lng);
+        bounds.extend(position); // 지도의 뷰포트를 데이터에 맞게 조정
+
+        // 마커 생성
+        const marker = new kakao.maps.Marker({
+            map: map,
+            position: position
+        });
+        markers.push(marker);
+
+        // 커스텀 오버레이(인포윈도우) HTML 구성 - Tailwind 클래스 활용
+        const content = `
+            <div class="bg-white rounded-xl shadow-2xl overflow-hidden relative transform -translate-y-full -mt-4" style="width: 220px;">
+                <div class="h-28 w-full bg-cover bg-center" style="background-image: url('${item.img}')"></div>
+                <button onclick="closeAllOverlays()" class="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm backdrop-blur-sm hover:bg-black/80 transition">&times;</button>
+                <div class="p-3">
+                    <h4 class="font-bold text-gray-900 text-base mb-1 truncate">${item.name}</h4>
+                    <p class="text-xs text-gray-500 mb-2">⭐ ${item.rating} · 리뷰 ${item.reviews.toLocaleString()}</p>
+                    <a href="${item.link}" target="_blank" class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-1.5 rounded transition">예약 / 상세 보기 &rarr;</a>
+                </div>
+                <!-- 오버레이 말풍선 꼬리 -->
+                <div class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-t-[8px] border-t-white border-r-[8px] border-r-transparent"></div>
+            </div>
+        `;
+
+        const overlay = new kakao.maps.CustomOverlay({
+            content: content,
+            position: position,
+            zIndex: 10
+        });
+
+        // 마커 클릭 시 해당 오버레이만 열기
+        kakao.maps.event.addListener(marker, 'click', function() {
+            closeAllOverlays();
+            overlay.setMap(map);
+            map.panTo(position);
+        });
+
+        overlays.push(overlay);
+    });
+
+    // 지도 중심 및 줌 레벨 자동 조정
+    if (data.length > 0) {
+        map.setBounds(bounds);
+    }
+}
+
+// 오버레이 닫기 전역 함수
+window.closeAllOverlays = function() {
+    overlays.forEach(overlay => overlay.setMap(null));
+}
+
+// 사이드바에서 카드 클릭 시 지도 포커스
+window.focusOnMap = function(lat, lng) {
+    const moveLatLon = new kakao.maps.LatLng(lat, lng);
+    map.panTo(moveLatLon);
+    
+    // 모바일인 경우 지도로 자동 스크롤(선택사항)
+    if (window.innerWidth < 768) {
+        document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+// 7. 유튜브 모달 제어
+window.openYoutubeModal = function(videoId) {
+    const modal = document.getElementById('youtube-modal');
+    const iframe = document.getElementById('youtube-iframe');
+    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+    
+    modal.classList.remove('hidden');
+    // 애니메이션 트리거를 위해 약간의 딜레이
+    setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        modal.classList.add('opacity-100');
+    }, 10);
+}
+
+window.closeYoutubeModal = function() {
+    const modal = document.getElementById('youtube-modal');
+    const iframe = document.getElementById('youtube-iframe');
+    
+    modal.classList.remove('opacity-100');
+    modal.classList.add('opacity-0');
+    
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        iframe.src = ''; // 비디오 재생 중지
+    }, 300); // Tailwind transition 시간과 맞춤
+}
