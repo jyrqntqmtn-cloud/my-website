@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>맛집 지도 | 시각화 대시보드</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- 폰트 -->
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        
+        /* 스크롤바 커스텀 (깔끔하게 변경) */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 지도 컨테이너 및 팝업 스타일 재정의 */
+        #map { z-index: 1; }
+        .leaflet-popup-content-wrapper { border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); padding: 0; }
+        .leaflet-popup-content { margin: 12px 16px; font-family: 'Pretendard', sans-serif; }
+        .leaflet-container a.leaflet-popup-close-button { top: 8px; right: 8px; color: #94a3b8; }
+        
+        /* 커스텀 마커 애니메이션 */
+        .marker-pin {
+            width: 16px; height: 16px;
+            background-color: #f97316;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(249, 115, 22, 0.5);
+            transition: transform 0.2s;
+        }
+        .marker-pin:hover { transform: scale(1.2); }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen overflow-hidden flex flex-col text-slate-800">
+
+    <!-- 상단 네비게이션바 -->
+    <nav class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20 shadow-sm shrink-0">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl">🍱</span>
+            <h1 class="text-xl font-extrabold bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent tracking-tight">
+                맛집 지도
+            </h1>
+        </div>
+        <div class="hidden md:flex gap-6 text-sm font-medium text-slate-500">
+            <span class="cursor-pointer hover:text-orange-500 transition">인기 맛집</span>
+            <span class="cursor-pointer hover:text-orange-500 transition">내 주변</span>
+            <span class="bg-slate-900 text-white px-4 py-1.5 rounded-full shadow-md hover:bg-slate-800 transition cursor-pointer">에디터 추천</span>
+        </div>
+    </nav>
+
+    <!-- 메인 레이아웃 (반응형 Split View) -->
+    <div class="flex flex-col md:flex-row flex-1 overflow-hidden relative">
+        
+        <!-- 좌측 사이드바 (리스트 영역) -->
+        <aside class="w-full md:w-[420px] h-[45vh] md:h-full bg-white flex flex-col z-20 border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)] shrink-0">
+            <!-- 검색창 영역 -->
+            <div class="p-5 border-b border-slate-100 bg-white z-10">
+                <div class="relative">
+                    <input type="text" id="searchInput" placeholder="어떤 맛집을 찾으시나요?" 
+                           class="w-full pl-11 pr-4 py-3 bg-slate-50 rounded-xl border border-slate-200 focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition-all text-sm font-medium text-slate-700">
+                    <svg class="w-5 h-5 absolute left-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+            </div>
+            
+            <!-- 리스트 스크롤 영역 -->
+            <div id="placeList" class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/50">
+                <!-- JS 렌더링 -->
+            </div>
+        </aside>
+
+        <!-- 우측 지도 영역 -->
+        <main class="flex-1 relative h-[55vh] md:h-full">
+            <div id="map" class="w-full h-full"></div>
+        </main>
+    </div>
+
+    <script>
+        // 1. 지도 초기화 (한국 중심)
+        const map = L.map('map', { zoomControl: false }).setView([37.55, 126.97], 13);
+
+        // 2. HTTP 에러가 없는 깔끔한 CartoDB Voyager 타일 사용 (한국어/영문 병기 지원)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        }).addTo(map);
+
+        // 줌 컨트롤 우측 하단 배치
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // 3. 맛집 더미 데이터
+        const restaurants =[
+            {
+                name: "성수 소문난감자탕",
+                cat: "한식",
+                lat: 37.5445, lng: 127.0560,
+                star: 4.8,
+                review: "백종원의 3대천왕 출연, 맑고 깊은 국물맛",
+                img: "https://images.unsplash.com/photo-1547592166-23ac45744acd?w=400"
+            },
+            {
+                name: "망원 헤이루피",
+                cat: "디저트",
+                lat: 37.5559, lng: 126.9015,
+                star: 4.9,
+                review: "MZ세대 저격 귀여운 캐릭터 도넛 전문점",
+                img: "https://images.unsplash.com/photo-1551024601-bec78aea704b?w=400"
+            },
+            {
+                name: "연남동 연하동",
+                cat: "일식",
+                lat: 37.5615, lng: 126.9248,
+                star: 4.6,
+                review: "대왕 꼬꼬동과 비주얼 폭발 연어 국수",
+                img: "https://images.unsplash.com/photo-1579206232972-7a720d76941e?w=400"
+            },
+            {
+                name: "명동교자 본점",
+                cat: "한식",
+                lat: 37.5625, lng: 126.9856,
+                star: 4.7,
+                review: "미쉐린 가이드 선정, 진한 마늘 김치와 칼국수",
+                img: "https://images.unsplash.com/photo-1580651315530-69c8e0026377?w=400"
+            }
+        ];
+
+        let markers =[]; // 마커 배열 관리용
+
+        // 4. UI 렌더링 함수
+        function render(data) {
+            const container = document.getElementById('placeList');
+            container.innerHTML = '';
+            
+            // 기존 마커 지우기
+            markers.forEach(m => map.removeLayer(m));
+            markers =[];
+
+            if (data.length === 0) {
+                container.innerHTML = `<div class="text-center text-slate-400 py-10 text-sm">검색 결과가 없습니다.</div>`;
+                return;
+            }
+
+            data.forEach((item) => {
+                // 리스트 카드 생성
+                const card = document.createElement('div');
+                card.className = "group bg-white p-4 rounded-2xl border border-slate-100 hover:border-orange-300 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden";
+                card.innerHTML = `
+                    <div class="flex gap-4">
+                        <div class="w-20 h-20 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                            <img src="${item.img}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
+                        </div>
+                        <div class="flex-1 flex flex-col justify-center">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-bold rounded-md">${item.cat}</span>
+                                <span class="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                    <svg class="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                    ${item.star}
+                                </span>
+                            </div>
+                            <h3 class="font-bold text-slate-800 text-sm group-hover:text-orange-600 transition truncate">${item.name}</h3>
+                            <p class="text-[11px] text-slate-500 mt-1 line-clamp-1">${item.review}</p>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex gap-2 border-t border-slate-50 pt-3">
+                        <button onclick="openYoutube(event, '${item.name}')" class="flex-1 py-2 bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-500 text-[11px] font-bold rounded-lg transition flex justify-center items-center gap-1">
+                            ▶ 영상 리뷰
+                        </button>
+                        <button onclick="focusMap(event, ${item.lat}, ${item.lng})" class="flex-1 py-2 bg-slate-50 hover:bg-orange-50 text-slate-600 hover:text-orange-600 text-[11px] font-bold rounded-lg transition flex justify-center items-center gap-1">
+                            📍 위치 보기
+                        </button>
+                    </div>
+                `;
+                
+                // 카드 전체 클릭 시 지도 이동
+                card.onclick = () => focusMap(null, item.lat, item.lng);
+                container.appendChild(card);
+
+                // 지도 마커 생성 (디자인 적용)
+                const customIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div class="marker-pin"></div>`,
+                    iconSize:[16, 16],
+                    iconAnchor: [8, 8],
+                    popupAnchor:[0, -10]
+                });
+
+                const popupHtml = `
+                    <div class="text-center">
+                        <h4 class="font-bold text-sm text-slate-800 mb-1">${item.name}</h4>
+                        <p class="text-[11px] text-slate-500">⭐ ${item.star}</p>
+                    </div>
+                `;
+
+                const marker = L.marker([item.lat, item.lng], { icon: customIcon })
+                                .addTo(map)
+                                .bindPopup(popupHtml);
+                
+                markers.push(marker);
+            });
+        }
+
+        // 5. 이벤트 핸들러 함수들
+        function focusMap(event, lat, lng) {
+            if (event) event.stopPropagation(); // 버튼 클릭 시 상위 이벤트(카드 클릭) 방지
+            map.flyTo([lat, lng], 16, { duration: 1.2 });
+        }
+
+        function openYoutube(event, name) {
+            if (event) event.stopPropagation();
+            // 검색어로 유튜브 새창 열기
+            window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(name + ' 맛집 리뷰')}`, '_blank');
+        }
+
+        // 검색 이벤트 연결
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase();
+            const filtered = restaurants.filter(r => 
+                r.name.toLowerCase().includes(keyword) || 
+                r.cat.includes(keyword)
+            );
+            render(filtered);
+        });
+
+        // 초기 렌더링
+        render(restaurants);
+    </script>
+</body>
+</html>
